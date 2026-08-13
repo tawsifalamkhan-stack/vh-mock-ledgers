@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock Ledger — Vertical Horizon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Inter+Tight:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ground:#EFF1EE;
+    --panel:#FFFFFF;
+    --ink:#17211E;
+    --muted:#6E7A75;
+    --faint:#9AA5A0;
+    --rule:#DADFDB;
+    --rule-strong:#C2CAC5;
+
+    --g-astar:#0B5F53;
+    --g-a:#2C8168;
+    --g-b:#6E9445;
+    --g-c:#B8912B;
+    --g-d:#C2712E;
+    --g-f:#A8452F;
+    --g-u:#7E2B26;
+    --g-na:#B4BCB8;
+
+    --serif:"Newsreader",Georgia,serif;
+    --sans:"Inter Tight",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--ground);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:15px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+
+  /* ---------- masthead ---------- */
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:10.5px;
+    letter-spacing:.16em;
+    text-transform:uppercase;
+    color:var(--muted);
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  }
+  .eyebrow .sep{color:var(--faint)}
+  h1{
+    font-family:var(--serif);
+    font-weight:400;
+    font-size:clamp(38px,7vw,62px);
+    line-height:.98;
+    letter-spacing:-.02em;
+    margin:10px 0 0;
+  }
+  h1 em{font-style:italic;color:var(--muted)}
+  .subline{
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--muted);
+    margin-top:12px;
+    display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  }
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--g-a);display:inline-block;flex:none}
+  .dot.live{animation:pulse 2.4s ease-in-out infinite}
+  .dot.stale{background:var(--g-c);animation:none}
+  .dot.dead{background:var(--g-f);animation:none}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+  hr.rule{border:0;border-top:1px solid var(--rule-strong);margin:24px 0 0}
+
+  /* ---------- distribution band (signature) ---------- */
+  .dist{margin-top:26px}
+  .dist-label{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--muted);margin-bottom:9px;
+    display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  }
+  .dist-band{
+    display:flex;height:46px;border-radius:3px;overflow:hidden;
+    background:var(--panel);border:1px solid var(--rule);
+  }
+  .dist-seg{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    color:#fff;font-family:var(--mono);min-width:0;overflow:hidden;
+    transition:flex-grow .5s cubic-bezier(.4,0,.2,1);
+  }
+  .dist-seg .g{font-size:11px;font-weight:600;letter-spacing:.04em;line-height:1.2}
+  .dist-seg .n{font-size:10px;opacity:.72;line-height:1.2}
+
+  /* ---------- controls ---------- */
+  .controls{
+    display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+    margin-top:28px;padding-bottom:14px;border-bottom:1px solid var(--rule-strong);
+  }
+  .field{position:relative;flex:1 1 220px;min-width:180px}
+  .field input{
+    width:100%;padding:9px 12px;border:1px solid var(--rule-strong);border-radius:3px;
+    background:var(--panel);font-family:var(--sans);font-size:14px;color:var(--ink);
+  }
+  .field input::placeholder{color:var(--faint)}
+  .field input:focus{outline:2px solid var(--ink);outline-offset:-1px}
+  select,button.ctl{
+    padding:9px 12px;border:1px solid var(--rule-strong);border-radius:3px;
+    background:var(--panel);font-family:var(--mono);font-size:11.5px;color:var(--ink);
+    letter-spacing:.05em;text-transform:uppercase;cursor:pointer;
+  }
+  select:focus-visible,button:focus-visible,input:focus-visible,.row:focus-visible{
+    outline:2px solid var(--ink);outline-offset:2px;
+  }
+  button.ctl:hover{background:var(--ground)}
+  button.ctl[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+
+  /* ---------- table ---------- */
+  .head{
+    display:grid;grid-template-columns:30px minmax(120px,1.2fr) 118px minmax(120px,1.4fr) 52px 38px 44px 44px;
+    gap:14px;align-items:end;
+    padding:14px 4px 8px;
+    font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);
+  }
+  .head .r{text-align:right}
+
+  .row{
+    display:grid;grid-template-columns:30px minmax(120px,1.2fr) 118px minmax(120px,1.4fr) 52px 38px 44px 44px;
+    gap:14px;align-items:center;
+    padding:11px 4px;border-top:1px solid var(--rule);
+    cursor:pointer;background:transparent;transition:background .12s;
+    width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;
+    font:inherit;color:inherit;
+  }
+  .row:hover{background:var(--panel)}
+  .row[aria-expanded="true"]{background:var(--panel)}
+  .idx{font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .name{display:flex;align-items:center;gap:8px;min-width:0;font-weight:500;letter-spacing:-.005em}
+  .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tag{
+    flex:none;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;
+    text-transform:uppercase;padding:2px 6px;border-radius:2px;border:1px solid;
+    white-space:nowrap;
+  }
+  .tag.joined{background:#FDF08A;border-color:#D9BE55;color:#6B5410}
+  .tag.notjoined{background:#F4CCCC;border-color:#DA9A9A;color:#8C2F1E}
+  .tag.new{background:#CFE2F3;border-color:#92B9DA;color:#1E4A73}
+  .tel{
+    font-family:var(--mono);font-size:11.5px;color:var(--muted);
+    font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    display:flex;align-items:center;gap:6px;
+  }
+  .tel.hidden{color:var(--faint);letter-spacing:.14em}
+  .tel a{
+    color:#166B44;text-decoration:none;border-bottom:1px solid rgba(22,107,68,.28);
+    overflow:hidden;text-overflow:ellipsis;
+  }
+  .tel a:hover{border-bottom-color:#166B44}
+  .wa-mark{
+    flex:none;width:14px;height:14px;border-radius:3px;background:#DCF0E4;
+    border:1px solid #93C9AC;color:#166B44;font-size:8px;line-height:12px;
+    text-align:center;font-family:var(--mono);font-weight:600;
+  }
+  .ums{
+    font-family:var(--mono);font-size:13px;text-align:right;
+    font-variant-numeric:tabular-nums;font-weight:500;
+  }
+  .ums.none{color:var(--rule-strong);font-weight:400}
+  .avg{font-family:var(--mono);font-size:14px;text-align:right;font-variant-numeric:tabular-nums}
+  .avg.none{color:var(--faint);font-size:11px}
+
+  .chip{
+    font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.03em;
+    color:#fff;padding:3px 0;border-radius:2px;text-align:center;display:block;
+  }
+  .chip.na{color:var(--muted);background:transparent;border:1px dashed var(--rule-strong);font-weight:400}
+
+  /* mock strip */
+  .strip{display:flex;align-items:flex-end;gap:3px;height:34px}
+  .slot{flex:1;height:100%;display:flex;align-items:flex-end;min-width:4px}
+  .bar{width:100%;border-radius:1px 1px 0 0;transition:height .4s cubic-bezier(.4,0,.2,1)}
+  .absent{width:100%;height:2px;background:repeating-linear-gradient(90deg,var(--rule-strong) 0 2px,transparent 2px 4px)}
+
+  /* ---------- detail ---------- */
+  .detail{background:var(--panel);border-top:1px solid var(--rule);padding:18px 16px 22px}
+  .detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(46px,1fr));gap:6px;max-width:640px}
+  .cell{border:1px solid var(--rule);border-radius:2px;padding:6px 4px;text-align:center}
+  .cell .k{font-family:var(--mono);font-size:9px;color:var(--faint);letter-spacing:.08em}
+  .cell .v{font-family:var(--mono);font-size:14px;font-weight:500;font-variant-numeric:tabular-nums;line-height:1.3}
+  .cell .v.miss{color:var(--faint);font-weight:400}
+
+  .meta{display:flex;gap:32px;flex-wrap:wrap;margin-top:20px}
+  .meta-block .k{
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:4px;
+  }
+  .meta-block .v{font-family:var(--mono);font-size:13px}
+  .meta-block .v a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--rule-strong)}
+  .meta-block .v a:hover{border-color:var(--ink)}
+  .masked{color:var(--faint);letter-spacing:.08em}
+  .trend{font-family:var(--mono);font-size:13px}
+  .trend .up{color:var(--g-a)}
+  .trend .down{color:var(--g-f)}
+
+  /* ---------- states ---------- */
+  .contacts{margin-top:18px;border-top:1px solid var(--rule);padding-top:14px}
+  .crow{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:7px 0;border-bottom:1px solid var(--rule);
+  }
+  .crow:last-child{border-bottom:0}
+  .crole{
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);width:62px;flex:none;
+  }
+  .cnum{
+    font-family:var(--mono);font-size:13.5px;color:var(--ink);
+    text-decoration:none;flex:1 1 145px;min-width:0;
+    font-variant-numeric:tabular-nums;letter-spacing:.01em;
+  }
+  .cnum:hover{text-decoration:underline}
+  .cnum.none{color:var(--faint);letter-spacing:.08em}
+  .cacts{display:flex;gap:6px;flex:none}
+  .act{
+    font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+    padding:4px 9px;border-radius:2px;border:1px solid;text-decoration:none;white-space:nowrap;
+  }
+  .act.wa{background:#DCF0E4;border-color:#93C9AC;color:#166B44}
+  .act.wa:hover{background:#C9E8D6}
+  .act.tel{background:var(--ground);border-color:var(--rule-strong);color:var(--muted)}
+  .act.tel:hover{background:var(--panel);color:var(--ink)}
+
+  .state{
+    padding:44px 16px;text-align:center;color:var(--muted);
+    font-family:var(--mono);font-size:12.5px;letter-spacing:.02em;
+  }
+  .state.err{color:var(--g-f)}
+  .state .hint{display:block;margin-top:8px;color:var(--faint);font-size:11.5px;letter-spacing:0;font-family:var(--sans)}
+
+  .banner{
+    margin-top:22px;padding:12px 14px;border:1px solid var(--rule-strong);
+    border-left:3px solid var(--g-c);border-radius:3px;background:var(--panel);
+    font-size:13.5px;line-height:1.45;color:var(--muted);
+  }
+  .banner b{color:var(--ink);font-weight:600}
+  .banner code{
+    font-family:var(--mono);font-size:12px;background:var(--ground);
+    padding:1px 5px;border-radius:2px;color:var(--ink);
+  }
+
+  .foot{
+    margin-top:34px;padding-top:16px;border-top:1px solid var(--rule-strong);
+    font-family:var(--mono);font-size:10.5px;color:var(--faint);
+    display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;letter-spacing:.04em;
+  }
+
+  @media (max-width:640px){
+    .head{display:none}
+    .row{grid-template-columns:26px 1fr 54px 40px;gap:10px;padding:12px 2px}
+    .row > .tel{grid-column:2 / -1;grid-row:2;margin-top:5px;font-size:12px}
+    .row > .ums.as{grid-column:3;grid-row:1;text-align:right}
+    .row > .ums.a2{grid-column:4;grid-row:1;text-align:right}
+    .row .avg{grid-column:2;grid-row:1;text-align:right;padding-right:4px}
+    .row .strip{grid-column:2 / -1;grid-row:2;margin-top:8px}
+    .row .idx{grid-row:1}
+    .row .name{grid-row:1}
+    .row .avg{grid-row:1}
+    .row .chipwrap{grid-row:1}
+    .meta{gap:20px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">
+      <span>Vertical Horizon</span><span class="sep">/</span>
+      <span>Edexcel IAL</span><span class="sep">/</span>
+      <span id="session">May AS</span>
+    </div>
+    <h1>Mock <em>Ledger</em></h1>
+    <div class="subline">
+      <span class="dot live" id="statusDot"></span>
+      <span id="statusText">Loading the sheet…</span>
+    </div>
+    <hr class="rule">
+  </header>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <section class="dist" id="distWrap" hidden>
+    <div class="dist-label">
+      <span>Predicted grade spread</span>
+      <span id="distNote"></span>
+    </div>
+    <div class="dist-band" id="distBand"></div>
+  </section>
+
+  <div class="controls">
+    <div class="field">
+      <input id="search" type="search" placeholder="Find a student" autocomplete="off" aria-label="Find a student">
+    </div>
+    <select id="filter" aria-label="Filter by predicted grade">
+      <option value="">All grades</option>
+    </select>
+    <select id="sort" aria-label="Sort">
+      <option value="name">Sort: name</option>
+      <option value="avg-desc">Sort: average, high first</option>
+      <option value="avg-asc">Sort: average, low first</option>
+      <option value="missed">Sort: mocks missed</option>
+      <option value="as-desc">Sort: AS UMS, high first</option>
+      <option value="as-asc">Sort: AS UMS, low first</option>
+    </select>
+    <button class="ctl" id="contactsBtn" aria-pressed="true">Hide contacts</button>
+    <button class="ctl" id="refreshBtn">Refresh</button>
+  </div>
+
+  <div class="head">
+    <div>#</div>
+    <div>Student</div>
+    <div>WhatsApp</div>
+    <div>Mocks 1–13</div>
+    <div class="r">Avg</div>
+    <div class="r">PG</div>
+    <div class="r">AS</div>
+    <div class="r">A2</div>
+  </div>
+
+  <div id="list"><div class="state">Reading the sheet…</div></div>
+
+  <div class="foot">
+    <span id="footCount"></span>
+    <span>Google caches the published sheet, so edits can take a few minutes to land here.</span>
+  </div>
+</div>
+
+<script>
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVJVmW6hBAy8PNTOonmB4x32dVr3Ff9uVjJkY3A8aZxswbivJHI5xeS7BvtkMu9ek11BL-xslWdLIC/pub?gid=606602577&single=true&output=csv";
+const REFRESH_MS = 60000;
+
+/* Snapshot used only when the live fetch is blocked (e.g. inside a preview sandbox).
+   Open this file in a browser or host it and the live sheet takes over. */
+const FALLBACK_CSV = `,Full Name,Contact,Father,Mother,1,2,3,4,5,6,7,8,9,10,11,12,13,PG,AVG,AS,A2,,MAY AS Grade Boundaries,
+1,Abrar Rahman,+8801770174675,+8801930469978,+8801715207984,37,,,86,64,83,65,90,65,101,117,102,40,D,77.3,,,,Min avg mark,Grade
+2,Adrina Islam,+8801730496073,+8801713246200,+8801717844444,,118,122,129,112,118,103,,51,131,133,99,67,C,107.5,,,,0,U
+3,Afnan Ahmed,+8801642104545,+8801711600300,+8801715438333,,,67,,,61,28,,23,39,109,38,74,F,54.9,,,,51,F
+4,Ahnaf Tahmid Bari,+8801325682636,+8801976507576,+8801976507576,,,,,,,,,,,87,44,,F,65.5,,,,70,D
+5,Aryana Naushin,+8801859976905,+8801713005869,+8801711042602,66,85,91,111,,90,94,80,126,86,98,130,163,C,101.7,,,,89,C
+6,Ashfiqa Akhter,+8801341579694,+8801713271241,+8801768777305,92,104,116,103,,106,88,97,54,72,82,85,,C,90.8,,,,108,B
+7,Binoy Biswas,+8801601583275,+8801616830801,+8801616830801,,,52,40,,77,,,,59,140,75,,D,73.8,,,,127,A
+8,Bornil Sarkar,+8801860776731,+8801712587521,+8801797963636,148,185,150,167,,122,130,113,114,136,122,162,154,A,141.9,,,,165,A*
+9,Esaam Amin,+8801753820490,+8801979800201,+8801954581786,100,,66,89,56,67,90,,37,97,77,103,112,D,81.3,,,,Average ignores mocks not sat,
+10,Ifaz Rahman Neer,+8801300742677,,,,,,,,,,,,,,,,N/A,,,,,,
+11,Ishmam ul Hasan,+8801707616365,+8801875475966,+8801875475966,,61,90,53,39,,52,46,26,63,55,80,15,F,52.7,,,,,
+12,Jannate Ahir,+8801968693958,+8801718157840,+8801705937877,83,133,119,111,,147,113,79,40,118,,89,111,C,103.9,,,,,
+13,Khalid Rahman Kaif,+8801878808369,+8801711731625,+8801932541833,39,,68,46,44,58,30,18,3,,69,51,,U,42.6,,,,,
+14,Kinnor Mahmud,+8801919030575,,,,,,,,,,,,,,,,N/A,,,,,,
+15,Mahdi Rahman,+8801703468868,,,,,,,,,,,,,,,,N/A,,,,,,
+16,Makdum Fahim,+8801829594545,+8801316514454,+8801316514454,86,107,128,116,,96,70,94,,73,66,52,85,D,88.5,,,,,
+17,Maliha Tabassum,+8801951194488,+8801616901010,+8801703535355,,,50,62,,84,38,,23,92,81,48,22,F,55.6,,,,,
+18,Md Mansib Mahmud,+8801774868296,+8801610336644,+8801610336644,,,118,113,,105,98,98,28,92,105,115,99,C,97.1,,,,,
+19,Miftahul Jannat Saba,+8801318990663,+8801819185885,+8801791996666,84,95,106,113,,103,92,69,64,113,109,114,98,C,96.7,,,,,
+20,Mir Abrar Khaled,+8801942180980,+8801711541744,+8801716981555,,128,170,127,,135,111,106,,129,152,106,156,A,132.0,,,,,
+21,Mir Mohammad Zayeen,+8801873651337,+8801919525552,+8801720448603,,34,57,63,,71,60,36,13,61,52,26,30,U,45.7,,,,,
+22,Mirza Shadman Rahman,+8801777788467,+8801740507011,+8801740507011,,70,,47,34,,,,,,44,,42,U,47.4,,,,,
+23,Muhaimin Gias Arisha,+8801970964389,+8801601890961,+8801707964389,114,139,120,118,108,127,111,93,27,81,81,65,85,C,97.6,,,,,
+24,Muhtsaim Sabhan,+8801635360035,+8801713006661,+8801635360035,126,108,167,136,,117,124,120,53,130,124,132,137,B,122.8,,,,,
+25,Muntasir Shah,+8801819270289,,,,,,,,,,,,,,,,N/A,,,,,,
+26,Mustansir Kutubuddin,+8801626532479,+8801919324334,+8801715676686,104,98,147,157,97,121,124,100,83,123,,126,146,B,118.8,,,,,
+27,Namira Alam Khan,+8801319695501,+8801814884177,+8801814884177,,98,102,103,74,72,81,28,7,87,67,66,37,F,68.5,,,,,
+28,Navan Rahman,+8801825173677,,,,,,,,,,,,,,,,N/A,,,,,,
+29,Omar Faruk,+8801722599909,+8801818888289,+8801722599909,121,138,135,155,,148,148,128,85,128,121,139,,A,131.5,,,,,
+30,Rabeya Basri,+8801675687078,+8801326264955,+8801326264955,158,184,122,136,,124,126,95,30,,134,113,59,B,116.5,,,,,
+31,Rajita Khan,+8801312661891,+8801750661891,+8801750661891,,,,,,125,58,68,,73,,77,33,D,72.3,,,,,
+32,Rashida Patel,+8801701318564,+8801713010142,+8801705936249,77,75,80,97,41,62,57,51,12,50,,38,23,F,55.3,,,,,
+33,Ridwan Ahmed,+8801325799744,+8801731416457,+8801731416457,34,56,45,,14,,61,22,15,33,,81,54,U,41.5,,,,,
+34,Samaira Farid,+8801722999740,+8801713010494,+8801711529349,168,150,170,155,153,166,179,160,156,169,182,172,169,A*,165.3,,,,,
+35,Sayeda Arshia Zaynab,+8801718080799,+8801713409320,+8801718080799,,,,118,49,85,58,87,,95,45,64,53,D,72.7,,,,,
+36,Shifath Ahmed Robin,+8801601447448,+8801758440011,+8801302135960,117,,,35,,97,86,,,,117,109,102,C,94.7,,,,,
+37,Sk Osman Goni,+8801790108533,+8801819242787,+8801306913803,126,148,128,161,141,141,149,133,89,154,162,153,182,A,143.6,,,,,
+38,Subaytah Mahdiat,+8801533120082,+8800000000000,+8801533120082,96,96,,110,98,95,54,,,97,87,92,120,C,94.5,,,,,
+39,Swagnik chakraborty,+8801773263448,+8801716268883,+8801723867130,,,,,,,40,,56,79,100,75,77,D,71.2,,,,,
+40,Tahani Ibnat Bhuiyan (OM),+8801855901059,+8801711546064,+8801712957788,150,158,113,,115,123,118,135,63,110,66,110,96,B,113.1,,,,,
+41,Tajrian Rahman Nabil,+8801312233029,+8801720046701,+8801729299218,72,123,,,110,117,66,,,,,91,45,C,89.1,,,,,
+42,Tamzid Imrose,+8801711582897,+8801711303801,+8801715046650,56,73,102,91,85,59,,44,,,,,35,F,68.1,,,,,
+43,Tasfia Haque,+8801316716252,+8801712518851,+8801754033471,,,,,49,,48,54,,65,83,44,15,F,51.1,,,,,
+44,Tathoy Saha,+8801859986777,+8801711533243,+8801638262385,127,,143,158,167,146,149,119,110,156,156,154,178,A,146.9,,,,,
+45,Tawsif Abrar,+8801886644623,+8801913390049,+8801880158707,,,,,,,17,,,,,90,52,F,53.0,,,,,
+46,Wafeeq Zuhayr,+8801402694225,+8801743748608,+8801751431260,,130,146,136,,112,91,101,,138,137,121,157,B,126.9,,,,,
+47,Yasfi Rahman,+8801339655146,+8801736934635,+8801736934635,,,61,,,,39,53,21,90,48,56,44,F,51.5,,,,,
+48,Zahraa Rahman,+8801333558722,,,,,,,,,,,,,,,,N/A,,,,,,
+49,Zaima Hasin,+8801720889294,,,,,,,,,,,,,,,,N/A,,,,,,`;
+
+const GRADE_COLOR = {
+  "A*":"var(--g-astar)", "A":"var(--g-a)", "B":"var(--g-b)",
+  "C":"var(--g-c)", "D":"var(--g-d)", "F":"var(--g-f)", "U":"var(--g-u)"
+};
+const GRADE_ORDER = ["A*","A","B","C","D","F","U"];
+
+let MODEL = { students:[], boundaries:[], mockCount:13, maxMark:200 };
+let showContacts = true;
+let openId = null;
+let lastSync = null;
+
+/* ---------- CSV ---------- */
+function parseCSV(text){
+  const rows=[]; let row=[], cell="", q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){
+      if(c==='"'){ if(text[i+1]==='"'){cell+='"';i++;} else q=false; }
+      else cell+=c;
+    } else {
+      if(c==='"') q=true;
+      else if(c===','){ row.push(cell); cell=""; }
+      else if(c==='\n'){ row.push(cell); rows.push(row); row=[]; cell=""; }
+      else if(c!=='\r') cell+=c;
+    }
+  }
+  if(cell.length||row.length){ row.push(cell); rows.push(row); }
+  return rows;
+}
+
+const clean = v => (v==null?"":String(v).trim());
+const num = v => { const n=parseFloat(clean(v)); return Number.isFinite(n)?n:null; };
+
+/* ---------- model ---------- */
+function buildModel(rows){
+  const header = (rows[0]||[]).map(clean);
+  const at = (re, dflt) => { const i = header.findIndex(h=>re.test(h)); return i<0? dflt : i; };
+  const iName = at(/full name/i, 1);
+  const iContact = at(/^contact$/i, 2);
+  const iFather = at(/^father$/i, 3);
+  const iMother = at(/^mother$/i, 4);
+  const iPG = at(/^pg$/i, 18);
+  const iAvg = at(/^avg$/i, 19);
+  const iStatus = header.findIndex(h=>/^(status|a2 status|joined)$/i.test(h));
+  const iAS = at(/^as$/i, 20);
+  const iA2 = at(/^a2$/i, 21);
+
+  let mockCols = [];
+  for(let c=Math.max(iMother,iContact)+1; c<iPG; c++){
+    if(/^\d+$/.test(header[c]||"")) mockCols.push(c);
+  }
+  if(!mockCols.length){
+    for(let c=Math.max(iMother,iContact)+1; c<iPG; c++) mockCols.push(c);
+  }
+
+  // boundaries live in their own two columns, found by the "Min avg mark" label
+  let bKey=-1, bGrade=-1, bStart=-1;
+  for(let r=0;r<rows.length && bKey<0;r++){
+    for(let c=0;c<rows[r].length;c++){
+      if(/min avg mark/i.test(clean(rows[r][c]))){ bKey=c; bGrade=c+1; bStart=r+1; break; }
+    }
+  }
+  const boundaries=[];
+  if(bKey>=0){
+    for(let r=bStart;r<rows.length;r++){
+      const min=num(rows[r][bKey]); const g=clean(rows[r][bGrade]);
+      if(min!==null && g) boundaries.push({min,grade:g});
+    }
+  }
+  boundaries.sort((a,b)=>b.min-a.min);
+
+  let maxMark=0;
+  const students = [];
+  for(let r=1;r<rows.length;r++){
+    const name = clean(rows[r][iName]);
+    if(!name) continue;
+    const marks = mockCols.map(c=>{ const n=num(rows[r][c]); if(n!==null&&n>maxMark)maxMark=n; return n; });
+    const sat = marks.filter(m=>m!==null);
+    const contact = clean(rows[r][iContact]);
+    const pgRaw = clean(rows[r][iPG]);
+    // a name with nothing else attached is a stray row, not a student
+    if(!contact && !sat.length && !pgRaw) continue;
+    const avg = num(rows[r][iAvg]);
+    students.push({
+      id:r,
+      no:clean(rows[r][0])||String(students.length+1),
+      name, marks, sat:sat.length,
+      missed:marks.length-sat.length,
+      avg,
+      as: num(rows[r][iAS]),
+      a2: num(rows[r][iA2]),
+      status: iStatus>=0? normStatus(rows[r][iStatus]) : (SEED_STATUS[name] || null),
+      pg: pgRaw || (avg===null?"N/A":gradeFor(avg,boundaries)),
+      contact,
+      father: clean(rows[r][iFather]),
+      mother: clean(rows[r][iMother])
+    });
+  }
+
+  const statusSource = iStatus>=0 ? "sheet"
+    : (students.some(s=>s.status) ? "seed" : "none");
+
+  return { students, boundaries, statusSource, hasStatus: statusSource!=="none",
+           mockCount:mockCols.length, maxMark:Math.max(200, Math.ceil(maxMark/10)*10) };
+}
+
+/* AS and A2 are UMS out of 300 each. Standard Edexcel IAL percentage bands. */
+const UMS_MAX = 300;
+const UMS_BANDS = [
+  {min:240, grade:"A"}, {min:210, grade:"B"}, {min:180, grade:"C"},
+  {min:150, grade:"D"}, {min:120, grade:"E"}, {min:0, grade:"U"}
+];
+const UMS_COLOR = {A:"var(--g-a)",B:"var(--g-b)",C:"var(--g-c)",
+                   D:"var(--g-d)",E:"var(--g-f)",U:"var(--g-u)"};
+function umsGrade(v){
+  if(v===null) return null;
+  for(const b of UMS_BANDS){ if(v>=b.min) return b.grade; }
+  return "U";
+}
+
+/* Bangladeshi mobiles are 880 + 1 + 9 digits. Accept local 01… and add the
+   country code. Reject placeholders like +8800000000000. */
+function normPhone(v){
+  let d = clean(v).replace(/\D/g,"");
+  if(!d) return null;
+  if(/^01\d{9}$/.test(d)) d = "88"+d;
+  if(/^1\d{9}$/.test(d)) d = "880"+d;
+  if(d.length < 11) return null;
+  if(/^0+$/.test(d.replace(/^880/,""))) return null;
+  return d;
+}
+const waLink  = d => "https://wa.me/"+d;
+const telLink = d => "tel:+"+d;
+const prettyPhone = d => /^8801\d{9}$/.test(d)
+  ? "+880 "+d.slice(3,6)+" "+d.slice(6,9)+" "+d.slice(9)
+  : "+"+d;
+
+/* A2 enrolment status, read from a text column in the sheet. */
+const STATUS = {
+  "Joined A2": {cls:"joined", rank:2},
+  "Not joined":{cls:"notjoined", rank:0},
+  "New":       {cls:"new", rank:1}
+};
+
+/* Transcribed from the highlight colours in the sheet: yellow joined, pink not
+   joined, blue new. Used only until a Status column exists, which then wins. */
+const SEED_STATUS = {
+  "Abrar Rahman":"Joined A2","Adrina Islam":"Joined A2","Afnan Ahmed":"Not joined",
+  "Ahnaf Tahmid Bari":"Joined A2","Aryana Naushin":"Joined A2","Ashfiqa Akhter":"Joined A2",
+  "Binoy Biswas":"Not joined","Bornil Sarkar":"Joined A2","Esaam Amin":"Joined A2",
+  "Ifaz Rahman Neer":"New","Ishmam ul Hasan":"Joined A2","Jannate Ahir":"Not joined",
+  "Khalid Rahman Kaif":"Joined A2","Kinnor Mahmud":"New","Mahdi Rahman":"New",
+  "Makdum Fahim":"Joined A2","Maliha Tabassum":"Joined A2","Md Mansib Mahmud":"Joined A2",
+  "Miftahul Jannat Saba":"Not joined","Mir Abrar Khaled":"Joined A2",
+  "Mir Mohammad Zayeen":"Joined A2","Mirza Shadman Rahman":"Joined A2",
+  "Muhaimin Gias Arisha":"Joined A2","Muhtsaim Sabhan":"Not joined","Muntasir Shah":"New",
+  "Mustansir Kutubuddin":"Joined A2","Namira Alam Khan":"Joined A2","Navan Rahman":"New",
+  "Omar Faruk":"Joined A2","Rabeya Basri":"Not joined","Rajita Khan":"Joined A2",
+  "Rashida Patel":"Joined A2","Ridwan Ahmed":"Joined A2","Samaira Farid":"Joined A2",
+  "Sayeda Arshia Zaynab":"Joined A2","Shifath Ahmed Robin":"Joined A2",
+  "Sk Osman Goni":"Joined A2","Subaytah Mahdiat":"Not joined",
+  "Swagnik chakraborty":"Not joined","Tahani Ibnat Bhuiyan (OM)":"Not joined",
+  "Tajrian Rahman Nabil":"Joined A2","Tamzid Imrose":"Joined A2","Tasfia Haque":"Not joined",
+  "Tathoy Saha":"Not joined","Tawsif Abrar":"Joined A2","Wafeeq Zuhayr":"Joined A2",
+  "Yasfi Rahman":"Joined A2","Zahraa Rahman":"New","Zaima Hasin":"New"
+};
+function normStatus(v){
+  const s = clean(v).toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+  if(!s) return null;
+  if(/^not\s*join/.test(s) || s==="no" || /^n j$/.test(s)) return "Not joined";
+  if(/join/.test(s) || s==="yes") return "Joined A2";
+  if(/^new/.test(s)) return "New";
+  return null;
+}
+
+function gradeFor(mark, boundaries){
+  if(mark===null||!boundaries.length) return null;
+  for(const b of boundaries){ if(mark>=b.min) return b.grade; }
+  return boundaries[boundaries.length-1].grade;
+}
+const colorFor = g => GRADE_COLOR[g] || "var(--g-na)";
+
+/* ---------- fetch ---------- */
+async function load(){
+  const dot=document.getElementById("statusDot");
+  const txt=document.getElementById("statusText");
+  const banner=document.getElementById("banner");
+
+  let text=null, reason="";
+  try{
+    const res = await fetch(CSV_URL, {cache:"no-store"});
+    if(!res.ok) throw new Error("the sheet returned HTTP "+res.status);
+    const body = await res.text();
+    if(/^\s*</.test(body)) throw new Error("the sheet returned a web page instead of CSV");
+    if(!/full name/i.test(body)) throw new Error("the response had no header row");
+    text = body;
+  }catch(err){
+    reason = err && err.message ? err.message : "the request was blocked";
+  }
+
+  const live = text !== null;
+  if(!live) text = FALLBACK_CSV;
+
+  let model;
+  try{ model = buildModel(parseCSV(text)); }
+  catch(err){ model = null; }
+
+  if(!model || !model.students.length){
+    dot.className="dot dead";
+    txt.textContent="No rows found";
+    banner.hidden=false;
+    banner.innerHTML='<b>The sheet loaded but no student rows parsed.</b> Check that row 1 still has '+
+      '<code>Full Name</code>, <code>PG</code> and <code>AVG</code> as column headers.';
+    document.getElementById("list").innerHTML='<div class="state err">Nothing to show.</div>';
+    return;
+  }
+
+  MODEL = model;
+  lastSync = new Date();
+  const stamp = lastSync.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+
+  if(live){
+    dot.className="dot live";
+    txt.textContent = MODEL.students.length+" students · "+MODEL.mockCount+" mocks · synced "+stamp;
+    banner.hidden=true;
+  }else{
+    dot.className="dot stale";
+    txt.textContent = MODEL.students.length+" students · "+MODEL.mockCount+" mocks · snapshot, not live";
+    banner.hidden=false;
+    banner.innerHTML='<b>Running on a saved snapshot.</b> The live request didn\u2019t go through: '+
+      esc(reason)+'. Preview sandboxes block outside requests. '+
+      'Download this file and open it in a browser, or host it, and it will pull straight from the sheet.';
+  }
+
+  buildFilter(); renderDist(); render();
+}
+
+/* ---------- distribution ---------- */
+function renderDist(){
+  const wrap=document.getElementById("distWrap"), band=document.getElementById("distBand");
+  const graded = MODEL.students.filter(s=>GRADE_ORDER.includes(s.pg));
+  if(!graded.length){ wrap.hidden=true; return; }
+  wrap.hidden=false;
+  const counts={}; GRADE_ORDER.forEach(g=>counts[g]=0);
+  graded.forEach(s=>counts[s.pg]++);
+  band.innerHTML = GRADE_ORDER.filter(g=>counts[g]>0).map(g=>
+    '<div class="dist-seg" style="flex-grow:'+counts[g]+';background:'+colorFor(g)+'">'+
+    '<span class="g">'+g+'</span><span class="n">'+counts[g]+'</span></div>').join("");
+  const nosat = MODEL.students.length-graded.length;
+  document.getElementById("distNote").textContent =
+    graded.length+" graded"+(nosat? " · "+nosat+" not sat":"");
+}
+
+function buildFilter(){
+  const sel=document.getElementById("filter"), keep=sel.value;
+  const present = GRADE_ORDER.filter(g=>MODEL.students.some(s=>s.pg===g));
+  let html = '<option value="">All students</option>'+
+    '<optgroup label="Predicted grade">'+
+      present.map(g=>'<option value="g:'+g+'">'+g+'</option>').join("")+
+      '<option value="g:__none">Not sat</option>'+
+    '</optgroup>';
+  if(MODEL.hasStatus){
+    const st = Object.keys(STATUS).filter(k=>MODEL.students.some(s=>s.status===k));
+    const blank = MODEL.students.some(s=>!s.status);
+    if(st.length){
+      html += '<optgroup label="A2 status">'+
+        st.map(k=>'<option value="s:'+k+'">'+k+'</option>').join("")+
+        (blank? '<option value="s:__blank">Not marked</option>':'')+
+      '</optgroup>';
+    }
+  }
+  sel.innerHTML = html;
+  sel.value = keep;
+  if(sel.selectedIndex<0) sel.value="";
+
+  const sort=document.getElementById("sort");
+  const hasOpt = [...sort.options].some(o=>o.value==="status");
+  if(MODEL.hasStatus && !hasOpt){
+    const o=document.createElement("option");
+    o.value="status"; o.textContent="Sort: A2 status";
+    sort.appendChild(o);
+  }else if(!MODEL.hasStatus && hasOpt){
+    [...sort.options].forEach(o=>{ if(o.value==="status") o.remove(); });
+  }
+}
+
+/* ---------- render ---------- */
+function render(){
+  const q=document.getElementById("search").value.trim().toLowerCase();
+  const f=document.getElementById("filter").value;
+  const sort=document.getElementById("sort").value;
+
+  let list = MODEL.students.filter(s=>{
+    if(q && !s.name.toLowerCase().includes(q)) return false;
+    if(!f) return true;
+    if(f.startsWith("g:")){
+      const v=f.slice(2);
+      return v==="__none" ? !GRADE_ORDER.includes(s.pg) : s.pg===v;
+    }
+    if(f.startsWith("s:")){
+      const v=f.slice(2);
+      return v==="__blank" ? !s.status : s.status===v;
+    }
+    return true;
+  });
+
+  const A=(x)=> x.avg===null? -1 : x.avg;
+  const R=(x)=> x.status? STATUS[x.status].rank : 9;
+  if(sort==="avg-desc") list.sort((a,b)=>A(b)-A(a));
+  else if(sort==="avg-asc") list.sort((a,b)=>A(a)-A(b));
+  else if(sort==="missed") list.sort((a,b)=>b.missed-a.missed || a.name.localeCompare(b.name));
+  else if(sort==="status") list.sort((a,b)=>R(a)-R(b) || a.name.localeCompare(b.name));
+  else if(sort==="as-desc") list.sort((a,b)=>(b.as??-1)-(a.as??-1) || a.name.localeCompare(b.name));
+  else if(sort==="as-asc")  list.sort((a,b)=>(a.as??1e9)-(b.as??1e9) || a.name.localeCompare(b.name));
+  else list.sort((a,b)=>a.name.localeCompare(b.name));
+
+  const el=document.getElementById("list");
+  if(!list.length){
+    el.innerHTML='<div class="state">No student matches that.</div>';
+    document.getElementById("footCount").textContent="";
+    return;
+  }
+
+  el.innerHTML = list.map(s=>rowHTML(s)).join("");
+  const src = MODEL.statusSource==="sheet" ? " · A2 status live from the sheet"
+            : MODEL.statusSource==="seed"  ? " · A2 status from the highlights, add a Status column to make it live"
+            : "";
+  document.getElementById("footCount").textContent =
+    "Showing "+list.length+" of "+MODEL.students.length+src;
+
+  el.querySelectorAll(".row").forEach(el2=>{
+    const toggle=()=>{
+      const id=Number(el2.dataset.id);
+      openId = (openId===id)? null : id;
+      render();
+    };
+    el2.addEventListener("click",ev=>{
+      if(ev.target.closest("a")) return;   // let the WhatsApp link through
+      toggle();
+    });
+    el2.addEventListener("keydown",ev=>{
+      if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); toggle(); }
+    });
+  });
+}
+
+function rowHTML(s){
+  const open = openId===s.id;
+  const strip = s.marks.map(m=>{
+    if(m===null) return '<span class="slot"><span class="absent"></span></span>';
+    const h=Math.max(8, Math.round(m/MODEL.maxMark*100));
+    const g=gradeFor(m,MODEL.boundaries);
+    return '<span class="slot"><span class="bar" style="height:'+h+'%;background:'+colorFor(g)+'"></span></span>';
+  }).join("");
+
+  const chipCls = GRADE_ORDER.includes(s.pg)? "chip":"chip na";
+  const chipStyle = GRADE_ORDER.includes(s.pg)? 'style="background:'+colorFor(s.pg)+'"':'';
+  const avgHTML = s.avg===null
+    ? '<div class="avg none">—</div>'
+    : '<div class="avg">'+s.avg.toFixed(1)+'</div>';
+
+  const tag = s.status
+    ? '<span class="tag '+STATUS[s.status].cls+'">'+esc(s.status)+'</span>'
+    : '';
+
+  const tp = normPhone(s.contact);
+  const tel = !tp
+    ? '<span class="tel hidden">—</span>'
+    : showContacts
+      ? '<span class="tel"><span class="wa-mark">W</span>'+
+        '<a href="'+waLink(tp)+'" target="_blank" rel="noopener" '+
+        'onclick="event.stopPropagation()">'+prettyPhone(tp)+'</a></span>'
+      : '<span class="tel hidden">•••••••</span>';
+
+  const umsCell = (v, cls) => {
+    if(v===null) return '<span class="ums none '+cls+'">·</span>';
+    const g = umsGrade(v);
+    return '<span class="ums '+cls+'" style="color:'+UMS_COLOR[g]+'" '+
+           'title="'+v+' of '+UMS_MAX+' UMS · grade '+g+'">'+v+'</span>';
+  };
+
+  return '<div class="row" role="button" tabindex="0" data-id="'+s.id+'" aria-expanded="'+open+'">'+
+      '<span class="idx">'+s.no+'</span>'+
+      '<span class="name"><span class="nm">'+esc(s.name)+'</span>'+tag+'</span>'+
+      tel+
+      '<span class="strip">'+strip+'</span>'+
+      avgHTML+
+      '<span class="chipwrap"><span class="'+chipCls+'" '+chipStyle+'>'+esc(s.pg)+'</span></span>'+
+      umsCell(s.as,"as")+
+      umsCell(s.a2,"a2")+
+    '</div>'+ (open? detailHTML(s) : "");
+}
+
+function umsBlock(label, v){
+  if(v===null) return '<div class="meta-block"><div class="k">'+label+'</div>'+
+    '<div class="v"><span class="masked">not entered</span></div></div>';
+  const g = umsGrade(v), pct = Math.round(v/UMS_MAX*100);
+  return '<div class="meta-block"><div class="k">'+label+'</div><div class="v">'+
+    '<span style="color:'+UMS_COLOR[g]+';font-weight:500">'+v+'</span>'+
+    '<span class="masked"> / '+UMS_MAX+' · '+g+' · '+pct+'%</span></div></div>';
+}
+
+function detailHTML(s){
+  const cells = s.marks.map((m,i)=>{
+    const g = m===null? null : gradeFor(m,MODEL.boundaries);
+    const v = m===null? '<div class="v miss">·</div>'
+      : '<div class="v" style="color:'+colorFor(g)+'">'+m+'</div>';
+    return '<div class="cell"><div class="k">'+(i+1)+'</div>'+v+'</div>';
+  }).join("");
+
+  const half = Math.floor(s.marks.length/2);
+  const mean = arr => { const v=arr.filter(x=>x!==null); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; };
+  const early = mean(s.marks.slice(0,half)), late = mean(s.marks.slice(half));
+  let trend = '<span class="masked">not enough mocks</span>';
+  if(early!==null && late!==null){
+    const d = late-early;
+    const cls = d>=0? "up":"down";
+    trend = '<span class="'+cls+'">'+(d>=0?"+":"")+d.toFixed(1)+'</span> '+
+            '<span class="masked">('+early.toFixed(0)+' \u2192 '+late.toFixed(0)+')</span>';
+  }
+
+  const crow = (role, raw) => {
+    const d = normPhone(raw);
+    if(!d) return '<div class="crow"><span class="crole">'+role+'</span>'+
+                  '<span class="cnum none">not on file</span></div>';
+    if(!showContacts) return '<div class="crow"><span class="crole">'+role+'</span>'+
+                  '<span class="cnum none">•••• ••• •••</span></div>';
+    return '<div class="crow">'+
+      '<span class="crole">'+role+'</span>'+
+      '<a class="cnum" href="'+waLink(d)+'" target="_blank" rel="noopener">'+prettyPhone(d)+'</a>'+
+      '<span class="cacts">'+
+        '<a class="act wa" href="'+waLink(d)+'" target="_blank" rel="noopener">WhatsApp</a>'+
+        '<a class="act tel" href="'+telLink(d)+'">Call</a>'+
+      '</span></div>';
+  };
+
+  return '<div class="detail">'+
+    '<div class="detail-grid">'+cells+'</div>'+
+    '<div class="meta">'+
+      '<div class="meta-block"><div class="k">Sat</div><div class="v">'+s.sat+' of '+s.marks.length+'</div></div>'+
+      '<div class="meta-block"><div class="k">Trend</div><div class="v trend">'+trend+'</div></div>'+
+      umsBlock("AS UMS", s.as)+
+      umsBlock("A2 UMS", s.a2)+
+    '</div>'+
+    '<div class="contacts">'+
+      crow("Student", s.contact)+
+      crow("Father", s.father)+
+      crow("Mother", s.mother)+
+    '</div></div>';
+}
+
+const esc = s => String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* ---------- wiring ---------- */
+document.getElementById("search").addEventListener("input",render);
+document.getElementById("filter").addEventListener("change",render);
+document.getElementById("sort").addEventListener("change",render);
+document.getElementById("refreshBtn").addEventListener("click",load);
+document.getElementById("contactsBtn").addEventListener("click",e=>{
+  showContacts=!showContacts;
+  e.currentTarget.setAttribute("aria-pressed",String(showContacts));
+  e.currentTarget.textContent = showContacts? "Hide contacts":"Show contacts";
+  render();
+});
+
+load();
+setInterval(load, REFRESH_MS);
+setInterval(()=>{
+  if(!lastSync) return;
+  const mins=(Date.now()-lastSync)/60000;
+  const dot=document.getElementById("statusDot");
+  if(dot.classList.contains("dead")) return;
+  dot.className = mins>5? "dot stale":"dot live";
+},30000);
+</script>
+</body>
+</html>
