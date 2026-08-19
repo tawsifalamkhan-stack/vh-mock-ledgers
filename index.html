@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <meta name="googlebot" content="noindex, nofollow">
-<title>IAL AS May 2026 Result — Vertical Horizon</title>
+<title>VH Accounting May 2026 Result Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Archivo+Black&family=Anton&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -303,6 +303,13 @@
     display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
   }
 
+  /* ---------- yes / no badges (IGCSE OL Grad · AL ACT) ---------- */
+  .yn{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.03em;
+    padding:2px 10px;border-radius:999px;border:1px solid var(--line-strong);
+    color:var(--muted);display:inline-block;line-height:1.5}
+  .yn.yes{background:#DCF0E4;border-color:#93C9AC;color:#166B44}
+  .yn.no{background:#F4D9D6;border-color:#D9A29A;color:#9B3B2E}
+
   /* ---------- tab switcher ---------- */
   .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-top:18px}
   .tab{
@@ -344,7 +351,7 @@
         <span>Accounting</span>
         <span class="lvl">AS</span>
       </div>
-      <h1>IAL AS MAY 2026 - RESULT</h1>
+      <h1>VH ACCOUNTING MAY 2026 RESULT DASHBOARD</h1>
       <div class="subline">Course instructor: Tawsif Alam Khan</div>
     </div>
   </header>
@@ -511,6 +518,16 @@ function parseCSV(text){
 
 const clean = v => (v==null?"":String(v).trim());
 const num = v => { const n=parseFloat(clean(v)); return Number.isFinite(n)?n:null; };
+
+/* Reads a Yes/No field. Google Sheets checkboxes export as TRUE/FALSE; plain
+   text may be Yes/No/Y/N. Returns "Yes", "No", or null when blank. */
+function yesNo(v){
+  const s = clean(v).toLowerCase();
+  if(!s) return null;
+  if(/^(y|yes|true|1|✓|✔|checked|x)$/.test(s)) return "Yes";
+  if(/^(n|no|false|0)$/.test(s)) return "No";
+  return clean(v);
+}
 
 /* ---------- model ---------- */
 /* Adapts to whichever tab is loaded. `tab` is one of the TABS entries and
@@ -1036,12 +1053,21 @@ function detailHTML(s){
                : 'var(--g-na)';
 
   let scoreBlocks = umsBlock(m? m.label : "Score", s.as, asG);
-  if(s.secVal!==null && s.secVal!==undefined && s.secLabel){
+  const isIg = TABS[currentTab] && TABS[currentTab].kind==="igcse";
+  if(isIg){
+    // OL Grad / AL ACT tick-box fields, mirrored from the sheet.
+    const ol = yesNo(s.ol), al = yesNo(s.al);
+    const badge = v => v==="Yes" ? '<span class="yn yes">Yes</span>'
+                    : v==="No"  ? '<span class="yn no">No</span>'
+                    : v ? '<span class="yn">'+esc(v)+'</span>'
+                    : '<span class="masked">—</span>';
+    // Dependency: A-Level Accounting only applies once a student is an OL grad,
+    // so if OL Grad is No the AL ACT field is shown as not applicable.
+    const alCell = ol==="No" ? '<span class="masked">n/a · not OL grad</span>' : badge(al);
+    scoreBlocks += '<div class="meta-block"><div class="k">OL Grad</div><div class="v">'+badge(ol)+'</div></div>'+
+                   '<div class="meta-block"><div class="k">AL ACT</div><div class="v">'+alCell+'</div></div>';
+  } else if(s.secVal!==null && s.secVal!==undefined && s.secLabel){
     scoreBlocks += umsBlock(s.secLabel, s.secVal);
-  } else if(s.ol || s.al){
-    const flag = (lab,val)=> '<div class="meta-block"><div class="k">'+lab+'</div>'+
-      '<div class="v">'+(val? esc(val) : '<span class="masked">—</span>')+'</div></div>';
-    scoreBlocks += flag("O-Level", s.ol) + flag("A-Level A", s.al);
   }
 
   return '<div class="detail" style="border-left-color:'+accent+'">'+
