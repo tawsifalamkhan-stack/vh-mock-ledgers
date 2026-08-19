@@ -309,6 +309,14 @@
     color:var(--muted);display:inline-block;line-height:1.5}
   .yn.yes{background:#DCF0E4;border-color:#93C9AC;color:#166B44}
   .yn.no{background:#F4D9D6;border-color:#D9A29A;color:#9B3B2E}
+  /* compact OL/AL pills shown inline in each IGCSE row */
+  .rowyn{display:inline-flex;gap:4px;flex:none;margin-left:4px}
+  .ynm{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.04em;
+    padding:1px 5px;border-radius:3px;border:1px solid var(--line-strong);
+    color:var(--muted);line-height:1.6}
+  .ynm.yes{background:#DCF0E4;border-color:#93C9AC;color:#166B44}
+  .ynm.no{background:#F4D9D6;border-color:#D9A29A;color:#9B3B2E}
+  .ynm.na{opacity:.45}
 
   /* ---------- tab switcher ---------- */
   .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-top:18px}
@@ -979,6 +987,18 @@ function rowHTML(s){
       STATUS[s.status].short+'</span>'
     : '<span class="tag none" aria-hidden="true"></span>';
 
+  // IGCSE rows carry compact OL Grad / AL ACT pills next to the name.
+  let rowFlags = "";
+  if(TABS[currentTab] && TABS[currentTab].kind==="igcse"){
+    const ol = yesNo(s.ol), al = yesNo(s.al);
+    const mini = (lab,state,title)=>'<span class="ynm '+state+'" title="'+esc(title)+'">'+lab+'</span>';
+    const olState = ol==="Yes"?"yes" : ol==="No"?"no" : "na";
+    const alState = ol==="No"?"na" : al==="Yes"?"yes" : al==="No"?"no" : "na";
+    const alTitle = ol==="No"?"AL ACT: n/a · not OL grad" : "AL ACT: "+(al||"—");
+    rowFlags = '<span class="rowyn">'+mini("OL",olState,"OL Grad: "+(ol||"—"))+
+               mini("AL",alState,alTitle)+'</span>';
+  }
+
   const umsCell = (v, cls, g) => {
     if(v===null) return '<span class="ums none '+cls+'">·</span>';
     g = g || (MODEL.metric? MODEL.metric.grade(v) : umsGrade(v));
@@ -994,7 +1014,7 @@ function rowHTML(s){
   return '<div class="row" role="button" tabindex="0" data-id="'+s.id+'" '+
          'style="border-left-color:'+accent+'" aria-expanded="'+open+'">'+
       '<span class="idx">'+s.no+'</span>'+
-      '<span class="name">'+tag+'<span class="nm">'+esc(s.name)+'</span></span>'+
+      '<span class="name">'+tag+'<span class="nm">'+esc(s.name)+'</span>'+rowFlags+'</span>'+
       avgHTML+
       '<span class="strip">'+strip+'</span>'+
       umsCell(s.as,"as",asG)+
