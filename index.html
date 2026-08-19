@@ -220,6 +220,7 @@
   .tag.joined{background:#FDF08A;border-color:#D9BE55;color:#6B5410}
   .tag.notjoined{background:#F4CCCC;border-color:#DA9A9A;color:#8C2F1E}
   .tag.new{background:#CFE2F3;border-color:#92B9DA;color:#1E4A73}
+  .tag.may{background:#FFE24D;border-color:#E3BE34;color:#5A4600;padding:2px 10px;min-width:0}
   .tag.none{background:transparent;border-color:transparent}
 
   .tel{
@@ -553,6 +554,7 @@ function buildModel(rows, tab){
   const iPG      = find(/^pg$/i);
   const iAvg     = find(/avg/i);                 // "MOCK AVG", "Mock AVG" or "AVG"
   const iStatus  = find(/^(status|a2 status|joined)$/i);
+  const iMay     = find(/may\s*as\s*2026/i);   // checkbox column flagging MAY AS 2026 students
 
   // Summary columns — each tab has some subset of these.
   const iAsUms = find(/^as\s*ums$/i) >=0 ? find(/^as\s*ums$/i) : find(/^as$/i);
@@ -639,6 +641,7 @@ function buildModel(rows, tab){
       secLabel, secVal,
       ol: iOL>=0? clean(rows[r][iOL]) : "",
       al: iAL>=0? clean(rows[r][iAL]) : "",
+      may2026: iMay>=0 ? (yesNo(rows[r][iMay])==="Yes") : false,
       status: iStatus>=0? normStatus(rows[r][iStatus]) : (SEED_STATUS[name] || null),
       pg: pgRaw || (avg===null?"N/A":gradeFor(avg,boundaries)),
       contact,
@@ -658,6 +661,7 @@ function buildModel(rows, tab){
         grade:v=>umsGrade(v), color:g=>UMS_COLOR[g]||"var(--g-na)" };
 
   return { students, boundaries, statusSource, hasStatus: statusSource!=="none",
+           hasMay2026: students.some(s=>s.may2026),
            mockCount:mockCols.length, maxMark:Math.max(200, Math.ceil(maxMark/10)*10),
            metric };
 }
@@ -886,19 +890,24 @@ function buildFilter(){
       '</optgroup>';
     }
   }
+  if(MODEL.hasMay2026){
+    html += '<optgroup label="Tag">'+
+      '<option value="t:may">MAY AS 2026</option>'+
+      '<option value="t:__untagged">Not MAY AS 2026</option>'+
+    '</optgroup>';
+  }
   sel.innerHTML = html;
   sel.value = keep;
   if(sel.selectedIndex<0) sel.value="";
 
   const sort=document.getElementById("sort");
-  const hasOpt = [...sort.options].some(o=>o.value==="status");
-  if(MODEL.hasStatus && !hasOpt){
-    const o=document.createElement("option");
-    o.value="status"; o.textContent="Sort: A2 status";
-    sort.appendChild(o);
-  }else if(!MODEL.hasStatus && hasOpt){
-    [...sort.options].forEach(o=>{ if(o.value==="status") o.remove(); });
-  }
+  const ensureSort=(val,label,present)=>{
+    const has=[...sort.options].some(o=>o.value===val);
+    if(present && !has){ const o=document.createElement("option"); o.value=val; o.textContent=label; sort.appendChild(o); }
+    else if(!present && has){ [...sort.options].forEach(o=>{ if(o.value===val) o.remove(); }); }
+  };
+  ensureSort("status","Sort: A2 status",MODEL.hasStatus);
+  ensureSort("tag","Sort: MAY AS 2026 first",MODEL.hasMay2026);
 }
 
 /* ---------- render ---------- */
@@ -922,6 +931,10 @@ function render(){
       const v=f.slice(2);
       return v==="__blank" ? !s.status : s.status===v;
     }
+    if(f.startsWith("t:")){
+      const v=f.slice(2);
+      return v==="__untagged" ? !s.may2026 : !!s.may2026;
+    }
     return true;
   });
 
@@ -931,6 +944,7 @@ function render(){
   else if(sort==="avg-asc") list.sort((a,b)=>A(a)-A(b));
   else if(sort==="missed") list.sort((a,b)=>b.missed-a.missed || a.name.localeCompare(b.name));
   else if(sort==="status") list.sort((a,b)=>R(a)-R(b) || a.name.localeCompare(b.name));
+  else if(sort==="tag") list.sort((a,b)=>(b.may2026?1:0)-(a.may2026?1:0) || a.name.localeCompare(b.name));
   else if(sort==="as-desc") list.sort((a,b)=>(b.as??-1)-(a.as??-1) || a.name.localeCompare(b.name));
   else if(sort==="as-asc")  list.sort((a,b)=>(a.as??1e9)-(b.as??1e9) || a.name.localeCompare(b.name));
   else list.sort((a,b)=>a.name.localeCompare(b.name));
@@ -982,7 +996,10 @@ function rowHTML(s){
     ? '<div class="avg none">—</div>'
     : '<div class="avg">'+s.avg.toFixed(1)+'</div>';
 
-  const tag = s.status
+  // MAY AS 2026 students carry only the yellow MAY AS 2026 tag — no other tag.
+  const tag = s.may2026
+    ? '<span class="tag may" title="MAY AS 2026">MAY AS 2026</span>'
+    : s.status
     ? '<span class="tag '+STATUS[s.status].cls+'" title="'+esc(s.status)+'">'+
       STATUS[s.status].short+'</span>'
     : '<span class="tag none" aria-hidden="true"></span>';
