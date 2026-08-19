@@ -188,7 +188,7 @@
   /* ---------- table ---------- */
   .head{
     display:grid;
-    grid-template-columns:30px minmax(160px,1.6fr) 58px minmax(140px,1.6fr) 62px 52px;
+    grid-template-columns:30px minmax(160px,1.6fr) 58px minmax(140px,1.6fr) 62px 62px 52px;
     gap:var(--col-gap);align-items:end;padding:18px 14px 8px;
     font-family:var(--t-colhead-fam);font-size:var(--t-colhead-size);font-weight:var(--t-colhead-wt);letter-spacing:var(--t-colhead-ls);text-transform:var(--t-colhead-tt);color:var(--c-colhead);
   }
@@ -197,7 +197,7 @@
   /* The 4px left accent bar is the site's signature device, here keyed to grade. */
   .row{
     display:grid;
-    grid-template-columns:30px minmax(160px,1.6fr) 58px minmax(140px,1.6fr) 62px 52px;
+    grid-template-columns:30px minmax(160px,1.6fr) 58px minmax(140px,1.6fr) 62px 62px 52px;
     gap:var(--col-gap);align-items:center;width:100%;text-align:left;font:inherit;color:inherit;
     padding:var(--row-pad-y) var(--row-pad-x);margin-bottom:var(--row-gap);
     background:var(--c-row-bg);border:1px solid var(--c-row-border);
@@ -340,6 +340,7 @@
     .row .name{grid-row:1}
     .row .avg{grid-column:2;grid-row:1;text-align:right;padding-right:4px}
     .row > .ums.as{grid-column:3;grid-row:1;text-align:right}
+    .row > .ums.sec{display:none}
     .row > .chipwrap{grid-column:4;grid-row:1}
     .row .strip{grid-column:2 / -1;grid-row:2;margin-top:8px}
     .meta{gap:18px}
@@ -403,6 +404,7 @@
     <div class="r">Avg</div>
     <div>Mocks 1–13</div>
     <div class="r" id="hScore">AS UMS</div>
+    <div class="r" id="hScore2">A2 UMS</div>
     <div class="r" id="hGrade">AS Gr</div>
   </div>
 
@@ -829,6 +831,8 @@ function setTabHead(){
   const m = MODEL.metric;
   const lbl = m? m.label : tab.metricLabel;
   const h = document.getElementById("hScore"); if(h) h.textContent = lbl;
+  const sec2 = tab.kind==="igcse" ? "" : (tab.primary==="a2Ums" ? "AS UMS" : "A2 UMS");
+  const h2 = document.getElementById("hScore2"); if(h2) h2.textContent = sec2;
   const g = document.getElementById("hGrade"); if(g) g.textContent = (m? m.short : tab.short);
   const sHi = document.getElementById("sortHi"); if(sHi) sHi.textContent = "Sort: "+lbl+", high first";
   const sLo = document.getElementById("sortLo"); if(sLo) sLo.textContent = "Sort: "+lbl+", low first";
@@ -1035,6 +1039,7 @@ function rowHTML(s){
       avgHTML+
       '<span class="strip">'+strip+'</span>'+
       umsCell(s.as,"as",asG)+
+      umsCell(s.secVal,"sec")+
       '<span class="chipwrap">'+asChip+'</span>'+
     '</div>'+ (open? detailHTML(s) : "");
 }
