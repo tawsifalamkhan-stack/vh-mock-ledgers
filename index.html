@@ -303,6 +303,18 @@
     display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
   }
 
+  /* ---------- tab switcher ---------- */
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-top:18px}
+  .tab{
+    font-family:var(--mono);font-size:12px;letter-spacing:.04em;
+    padding:8px 15px;border:1px solid var(--line-strong);border-radius:999px;
+    background:var(--panel);color:var(--muted);cursor:pointer;line-height:1;
+    transition:background .12s,color .12s,border-color .12s;
+  }
+  .tab:hover{color:var(--ink);border-color:var(--ink)}
+  .tab[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+  .tab:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+
   @media (max-width:640px){
     .logo{width:106px}
     .mast{gap:15px}
@@ -338,6 +350,8 @@
   </header>
   <hr class="rule">
 
+  <nav class="tabs" id="tabs" aria-label="Sheet tabs"></nav>
+
   <div class="banner" id="banner" hidden></div>
 
   <section class="dist" id="distWrap" hidden>
@@ -360,8 +374,8 @@
       <option value="avg-desc">Sort: average, high first</option>
       <option value="avg-asc">Sort: average, low first</option>
       <option value="missed">Sort: mocks missed</option>
-      <option value="as-desc">Sort: AS UMS, high first</option>
-      <option value="as-asc">Sort: AS UMS, low first</option>
+      <option value="as-desc" id="sortHi">Sort: AS UMS, high first</option>
+      <option value="as-asc" id="sortLo">Sort: AS UMS, low first</option>
     </select>
     <button class="ctl" id="contactsBtn" aria-pressed="true">Hide contacts</button>
     <button class="ctl" id="refreshBtn">Refresh</button>
@@ -372,8 +386,8 @@
     <div>Students</div>
     <div class="r">Avg</div>
     <div>Mocks 1–13</div>
-    <div class="r">AS UMS</div>
-    <div class="r">AS Gr</div>
+    <div class="r" id="hScore">AS UMS</div>
+    <div class="r" id="hGrade">AS Gr</div>
   </div>
 
   <div id="list"><div class="state">Reading the sheet…</div></div>
@@ -389,7 +403,22 @@
 </div>
 
 <script>
-const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVJVmW6hBAy8PNTOonmB4x32dVr3Ff9uVjJkY3A8aZxswbivJHI5xeS7BvtkMu9ek11BL-xslWdLIC/pub?gid=606602577&single=true&output=csv";
+/* The whole spreadsheet is published to web (File → Share → Publish to web →
+   Entire Document). Every tab is reachable through the same publish token by
+   swapping the gid below. */
+const PUB_BASE = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVJVmW6hBAy8PNTOonmB4x32dVr3Ff9uVjJkY3A8aZxswbivJHI5xeS7BvtkMu9ek11BL-xslWdLIC/pub";
+const csvURL = gid => PUB_BASE+"?gid="+gid+"&single=true&output=csv";
+
+/* The three tabs. `kind` selects how the headline column is read and graded:
+   ums  → AS/A2 UMS out of 300 (letter grades A–U)
+   igcse→ IGCSE raw marks out of 150 (numeric grades 9–1) */
+const TABS = [
+  {key:"as",    label:"AS",    full:"MAY AS List",    gid:"606602577",  kind:"ums",   metricLabel:"AS UMS", short:"AS Gr", primary:"asUms" },
+  {key:"a2",    label:"A2",    full:"MAY A2 List",    gid:"1136562450", kind:"ums",   metricLabel:"A2 UMS", short:"A2 Gr", primary:"a2Ums" },
+  {key:"igcse", label:"IGCSE", full:"MAY IGCSE List", gid:"1435045106", kind:"igcse", metricLabel:"Marks",  short:"Grade", primary:"marks" }
+];
+let currentTab = 0;
+const CSV_URL = csvURL(TABS[currentTab].gid);   // kept for the initial load
 const REFRESH_MS = 60000;
 
 /* Snapshot used only when the live fetch is blocked (e.g. inside a preview sandbox).
@@ -451,7 +480,12 @@ const GRADE_COLOR = {
 };
 const GRADE_ORDER = ["A*","A","B","C","D","F","U"];
 
-let MODEL = { students:[], boundaries:[], mockCount:13, maxMark:200 };
+/* IGCSE numeric grades 9–1 mapped onto the same green→red ramp. */
+const IG_COLOR = {"9":"var(--g-astar)","8":"var(--g-a)","7":"var(--g-a)","6":"var(--g-b)",
+  "5":"var(--g-c)","4":"var(--g-d)","3":"var(--g-d)","2":"var(--g-f)","1":"var(--g-u)","U":"var(--g-u)"};
+const IG_ORDER = ["9","8","7","6","5","4","3","2","1","U"];
+
+let MODEL = { students:[], boundaries:[], mockCount:13, maxMark:200, metric:null };
 let showContacts = true;
 let openId = null;
 let lastSync = null;
@@ -479,39 +513,58 @@ const clean = v => (v==null?"":String(v).trim());
 const num = v => { const n=parseFloat(clean(v)); return Number.isFinite(n)?n:null; };
 
 /* ---------- model ---------- */
-function buildModel(rows){
+/* Adapts to whichever tab is loaded. `tab` is one of the TABS entries and
+   decides the headline column (AS UMS / A2 UMS / IGCSE marks) and its grading. */
+function buildModel(rows, tab){
+  tab = tab || TABS[0];
   const header = (rows[0]||[]).map(clean);
-  const at = (re, dflt) => { const i = header.findIndex(h=>re.test(h)); return i<0? dflt : i; };
-  const iName = at(/full name/i, 1);
+  const find = re => header.findIndex(h=>re.test(h));
+  const at = (re, dflt) => { const i = find(re); return i<0? dflt : i; };
+
+  const iName    = at(/full name/i, 1);
   const iContact = at(/^contact$/i, 2);
-  const iFather = at(/^father$/i, 3);
-  const iMother = at(/^mother$/i, 4);
-  const iPG = at(/^pg$/i, 18);
-  const iAvg = at(/^avg$/i, 19);
-  const iStatus = header.findIndex(h=>/^(status|a2 status|joined)$/i.test(h));
-  const iAS = at(/^as$/i, 20);
-  const iA2 = at(/^a2$/i, 21);
+  const iFather  = at(/^father$/i, 3);
+  const iMother  = at(/^mother$/i, 4);
+  const iPG      = find(/^pg$/i);
+  const iAvg     = find(/avg/i);                 // "MOCK AVG", "Mock AVG" or "AVG"
+  const iStatus  = find(/^(status|a2 status|joined)$/i);
 
+  // Summary columns — each tab has some subset of these.
+  const iAsUms = find(/^as\s*ums$/i) >=0 ? find(/^as\s*ums$/i) : find(/^as$/i);
+  const iA2Ums = find(/^a2\s*ums$/i) >=0 ? find(/^a2\s*ums$/i) : find(/^a2$/i);
+  const iMarks = find(/^marks$/i);
+  const iAsGr  = find(/^as\s*grade$/i);
+  const iA2Gr  = find(/^a2\s*grade$/i);
+  const iGr    = find(/^grade$/i);
+  const iOL    = find(/^ol\b/i);
+  const iAL    = find(/^al\b/i);
+
+  // Mock columns are the numeric-headed columns between the names and the summary block.
+  const summaryCols = [iPG,iAvg,iAsUms,iA2Ums,iMarks].filter(x=>x>=0);
+  let firstSummary = summaryCols.length? Math.min(...summaryCols) : header.length;
+  const start = Math.max(iMother,iContact,iName)+1;
   let mockCols = [];
-  for(let c=Math.max(iMother,iContact)+1; c<iPG; c++){
-    if(/^\d+$/.test(header[c]||"")) mockCols.push(c);
-  }
-  if(!mockCols.length){
-    for(let c=Math.max(iMother,iContact)+1; c<iPG; c++) mockCols.push(c);
-  }
+  for(let c=start; c<firstSummary; c++){ if(/^\d+(\.\d+)?$/.test(header[c]||"")) mockCols.push(c); }
+  if(!mockCols.length){ for(let c=start; c<firstSummary; c++) mockCols.push(c); }
 
-  // boundaries live in their own two columns, found by the "Min avg mark" label
-  let bKey=-1, bGrade=-1, bStart=-1;
-  for(let r=0;r<rows.length && bKey<0;r++){
-    for(let c=0;c<rows[r].length;c++){
-      if(/min avg mark/i.test(clean(rows[r][c]))){ bKey=c; bGrade=c+1; bStart=r+1; break; }
+  // Grade-boundary table lives in its own columns. Handle both orientations:
+  //   "Min avg mark | Grade"  (AS/A2)   and   "Grade | Min Raw Mark"  (IGCSE)
+  let bMin=-1, bGrade=-1, bStart=-1;
+  for(let r=0; r<rows.length && bMin<0; r++){
+    for(let c=0; c<rows[r].length; c++){
+      if(/min\b.*mark/i.test(clean(rows[r][c]))){
+        bMin=c; bStart=r+1;
+        bGrade = /grade/i.test(clean(rows[r][c+1])) ? c+1
+               : /grade/i.test(clean(rows[r][c-1])) ? c-1 : c+1;
+        break;
+      }
     }
   }
   const boundaries=[];
-  if(bKey>=0){
-    for(let r=bStart;r<rows.length;r++){
-      const min=num(rows[r][bKey]); const g=clean(rows[r][bGrade]);
-      if(min!==null && g) boundaries.push({min,grade:g});
+  if(bMin>=0){
+    for(let r=bStart; r<rows.length; r++){
+      const min=num(rows[r][bMin]); const g=clean(rows[r][bGrade]);
+      if(min!==null && g && !/^max/i.test(g)) boundaries.push({min,grade:g});
     }
   }
   boundaries.sort((a,b)=>b.min-a.min);
@@ -525,8 +578,30 @@ function buildModel(rows){
     const sat = marks.filter(m=>m!==null);
     const contact = clean(rows[r][iContact]);
     const pgRaw = clean(rows[r][iPG]);
+
+    const asUms = iAsUms>=0? num(rows[r][iAsUms]) : null;
+    const a2Ums = iA2Ums>=0? num(rows[r][iA2Ums]) : null;
+    const mkVal = iMarks>=0? num(rows[r][iMarks]) : null;
+
+    // headline score + secondary panel value depend on the tab
+    let score, gradeText, secLabel=null, secVal=null;
+    if(tab.kind==="igcse"){
+      score = mkVal;
+      gradeText = iGr>=0? clean(rows[r][iGr]) : "";
+      secLabel = "Mock avg";                  // no A2 pairing on IGCSE
+      secVal = null;
+    } else if(tab.primary==="a2Ums"){
+      score = a2Ums!==null? a2Ums : asUms;
+      gradeText = iA2Gr>=0? clean(rows[r][iA2Gr]) : (iAsGr>=0? clean(rows[r][iAsGr]) : "");
+      secLabel = "AS UMS"; secVal = asUms;
+    } else {
+      score = asUms!==null? asUms : a2Ums;
+      gradeText = iAsGr>=0? clean(rows[r][iAsGr]) : "";
+      secLabel = "A2 UMS"; secVal = a2Ums;
+    }
+
     // a name with nothing else attached is a stray row, not a student
-    if(!contact && !sat.length && !pgRaw) continue;
+    if(!contact && !sat.length && !pgRaw && score===null) continue;
     const avg = num(rows[r][iAvg]);
     students.push({
       id:r,
@@ -534,8 +609,11 @@ function buildModel(rows){
       name, marks, sat:sat.length,
       missed:marks.length-sat.length,
       avg,
-      as: num(rows[r][iAS]),
-      a2: num(rows[r][iA2]),
+      as: score,                 // headline value for the active tab
+      gradeText: gradeText||"",  // explicit grade from the sheet, if any
+      secLabel, secVal,
+      ol: iOL>=0? clean(rows[r][iOL]) : "",
+      al: iAL>=0? clean(rows[r][iAL]) : "",
       status: iStatus>=0? normStatus(rows[r][iStatus]) : (SEED_STATUS[name] || null),
       pg: pgRaw || (avg===null?"N/A":gradeFor(avg,boundaries)),
       contact,
@@ -547,8 +625,16 @@ function buildModel(rows){
   const statusSource = iStatus>=0 ? "sheet"
     : (students.some(s=>s.status) ? "seed" : "none");
 
+  // Metric describes how the headline number is graded and coloured.
+  const metric = tab.kind==="igcse"
+    ? { label:tab.metricLabel, short:tab.short, max:150, order:IG_ORDER,
+        grade:v=>gradeFor(v,boundaries), color:g=>IG_COLOR[g]||"var(--g-na)" }
+    : { label:tab.metricLabel, short:tab.short, max:UMS_MAX, order:["A","B","C","D","E","U"],
+        grade:v=>umsGrade(v), color:g=>UMS_COLOR[g]||"var(--g-na)" };
+
   return { students, boundaries, statusSource, hasStatus: statusSource!=="none",
-           mockCount:mockCols.length, maxMark:Math.max(200, Math.ceil(maxMark/10)*10) };
+           mockCount:mockCols.length, maxMark:Math.max(200, Math.ceil(maxMark/10)*10),
+           metric };
 }
 
 /* AS and A2 are UMS out of 300 each. Standard Edexcel IAL percentage bands. */
@@ -564,6 +650,16 @@ function umsGrade(v){
   for(const b of UMS_BANDS){ if(v>=b.min) return b.grade; }
   return "U";
 }
+
+/* Headline grade for a student on the active tab: the sheet's own grade text
+   wins; otherwise it is derived from the score. */
+function scoreGrade(s){
+  if(s.gradeText && s.gradeText.trim()) return s.gradeText.trim();
+  if(s.as===null) return null;
+  return MODEL.metric ? MODEL.metric.grade(s.as) : umsGrade(s.as);
+}
+const mColor = g => MODEL.metric ? MODEL.metric.color(g) : (UMS_COLOR[g]||"var(--g-na)");
+const mMax   = () => MODEL.metric ? MODEL.metric.max : UMS_MAX;
 
 /* Bangladeshi mobiles are 880 + 1 + 9 digits. Accept local 01… and add the
    country code. Reject placeholders like +8800000000000. */
@@ -625,7 +721,7 @@ function gradeFor(mark, boundaries){
   for(const b of boundaries){ if(mark>=b.min) return b.grade; }
   return boundaries[boundaries.length-1].grade;
 }
-const colorFor = g => GRADE_COLOR[g] || "var(--g-na)";
+const colorFor = g => GRADE_COLOR[g] || IG_COLOR[g] || "var(--g-na)";
 
 /* ---------- fetch ---------- */
 async function load(){
@@ -633,9 +729,10 @@ async function load(){
   const txt=document.getElementById("statusText");
   const banner=document.getElementById("banner");
 
+  const tab = TABS[currentTab];
   let text=null, reason="";
   try{
-    const res = await fetch(CSV_URL, {cache:"no-store"});
+    const res = await fetch(csvURL(tab.gid), {cache:"no-store"});
     if(!res.ok) throw new Error("the sheet returned HTTP "+res.status);
     const body = await res.text();
     if(/^\s*</.test(body)) throw new Error("the sheet returned a web page instead of CSV");
@@ -646,10 +743,24 @@ async function load(){
   }
 
   const live = text !== null;
-  if(!live) text = FALLBACK_CSV;
+  // Only the AS tab carries a baked-in snapshot; the others need the live sheet.
+  if(!live) text = (tab.key==="as") ? FALLBACK_CSV : null;
+
+  if(text===null){
+    dot.className="dot stale";
+    txt.textContent = tab.full+" · could not load";
+    banner.hidden=false;
+    banner.innerHTML='<b>Couldn’t load the '+esc(tab.full)+' tab.</b> '+esc(reason)+'. '+
+      'Make sure the whole spreadsheet is <b>Published to web</b> (File → Share → Publish to web → '+
+      '<code>Entire Document</code>), then hit Refresh. Preview sandboxes also block the request — '+
+      'open the hosted page instead.';
+    document.getElementById("list").innerHTML='<div class="state err">Nothing to show for this tab.</div>';
+    setTabHead();
+    return;
+  }
 
   let model;
-  try{ model = buildModel(parseCSV(text)); }
+  try{ model = buildModel(parseCSV(text), tab); }
   catch(err){ model = null; }
 
   if(!model || !model.students.length){
@@ -668,55 +779,72 @@ async function load(){
 
   if(live){
     dot.className="dot live";
-    txt.textContent = MODEL.students.length+" students · "+MODEL.mockCount+" mocks · synced "+stamp;
+    txt.textContent = tab.full+" · "+MODEL.students.length+" students · "+MODEL.mockCount+" mocks · synced "+stamp;
     banner.hidden=true;
   }else{
     dot.className="dot stale";
-    txt.textContent = MODEL.students.length+" students · "+MODEL.mockCount+" mocks · snapshot, not live";
+    txt.textContent = tab.full+" · "+MODEL.students.length+" students · "+MODEL.mockCount+" mocks · snapshot, not live";
     banner.hidden=false;
     banner.innerHTML='<b>Running on a saved snapshot.</b> The live request didn\u2019t go through: '+
       esc(reason)+'. Preview sandboxes block outside requests. '+
       'Download this file and open it in a browser, or host it, and it will pull straight from the sheet.';
   }
 
+  setTabHead();
   buildFilter(); renderDist(); render();
+}
+
+/* Reflect the active tab in the column headers and the pressed tab button. */
+function setTabHead(){
+  const tab = TABS[currentTab];
+  const m = MODEL.metric;
+  const lbl = m? m.label : tab.metricLabel;
+  const h = document.getElementById("hScore"); if(h) h.textContent = lbl;
+  const g = document.getElementById("hGrade"); if(g) g.textContent = (m? m.short : tab.short);
+  const sHi = document.getElementById("sortHi"); if(sHi) sHi.textContent = "Sort: "+lbl+", high first";
+  const sLo = document.getElementById("sortLo"); if(sLo) sLo.textContent = "Sort: "+lbl+", low first";
+  document.querySelectorAll(".tab").forEach((b,i)=>
+    b.setAttribute("aria-pressed", String(i===currentTab)));
 }
 
 /* ---------- distribution ---------- */
 function renderDist(){
   const wrap=document.getElementById("distWrap"), band=document.getElementById("distBand");
-  const ORDER=["A","B","C","D","E","U"];
+  const m = MODEL.metric;
+  const ORDER = m ? m.order : ["A","B","C","D","E","U"];
   wrap.hidden=false;
-  document.querySelector(".dist-label span").textContent="AS grade spread";
+  document.querySelector(".dist-label span").textContent = (m? m.label : "Grade")+" spread";
 
   const graded = MODEL.students.filter(s=>s.as!==null);
   const note = document.getElementById("distNote");
 
   if(!graded.length){
-    band.innerHTML='<div class="dist-empty">No AS marks entered yet</div>';
+    band.innerHTML='<div class="dist-empty">No '+(m? m.label : "marks")+' entered yet</div>';
     note.textContent="0 of "+MODEL.students.length;
     return;
   }
 
   const counts={}; ORDER.forEach(g=>counts[g]=0);
-  graded.forEach(s=>counts[umsGrade(s.as)]++);
+  graded.forEach(s=>{ const g=scoreGrade(s); if(g!=null){ counts[g]=(counts[g]||0)+1; } });
   band.innerHTML = ORDER.filter(g=>counts[g]>0).map(g=>
-    '<div class="dist-seg" style="flex-grow:'+counts[g]+';background:'+UMS_COLOR[g]+'">'+
+    '<div class="dist-seg" style="flex-grow:'+counts[g]+';background:'+mColor(g)+'">'+
     '<span class="g">'+g+'</span><span class="n">'+counts[g]+'</span></div>').join("");
 
   const rest = MODEL.students.length-graded.length;
-  note.textContent = graded.length+" with AS marks"+(rest? " · "+rest+" not entered":"");
+  note.textContent = graded.length+" with "+(m? m.label : "marks")+(rest? " · "+rest+" not entered":"");
 }
 
 function buildFilter(){
   const sel=document.getElementById("filter"), keep=sel.value;
+  const m = MODEL.metric;
   const hasAS = MODEL.students.some(s=>s.as!==null);
   let html = '<option value="">All students</option>';
   if(hasAS){
-    const asPresent = ["A","B","C","D","E","U"].filter(g=>MODEL.students.some(s=>umsGrade(s.as)===g));
-    html += '<optgroup label="AS grade">'+
+    const order = m? m.order : ["A","B","C","D","E","U"];
+    const asPresent = order.filter(g=>MODEL.students.some(s=>scoreGrade(s)===g));
+    html += '<optgroup label="'+(m? m.label : "Grade")+'">'+
       asPresent.map(g=>'<option value="a:'+g+'">'+g+'</option>').join("")+
-      '<option value="a:__none">No AS mark</option></optgroup>';
+      '<option value="a:__none">No '+(m? m.label : "mark")+'</option></optgroup>';
   }
   const present = GRADE_ORDER.filter(g=>MODEL.students.some(s=>s.pg===g));
   html += '<optgroup label="Mock grade">'+
@@ -763,7 +891,7 @@ function render(){
     }
     if(f.startsWith("a:")){
       const v=f.slice(2);
-      return v==="__none" ? s.as===null : umsGrade(s.as)===v;
+      return v==="__none" ? s.as===null : scoreGrade(s)===v;
     }
     if(f.startsWith("s:")){
       const v=f.slice(2);
@@ -821,9 +949,9 @@ function rowHTML(s){
     return '<span class="slot"><span class="bar" style="height:'+h+'%;background:'+colorFor(g)+'"></span></span>';
   }).join("");
 
-  const asG = umsGrade(s.as);   // AS grade follows straight from the AS UMS mark
+  const asG = scoreGrade(s);   // headline grade for the active tab (sheet text wins)
   const asChip = asG
-    ? '<span class="chip" style="background:'+UMS_COLOR[asG]+'">'+asG+'</span>'
+    ? '<span class="chip" style="background:'+mColor(asG)+'">'+esc(asG)+'</span>'
     : '<span class="chip na">\u00b7</span>';
   const avgHTML = s.avg===null
     ? '<div class="avg none">—</div>'
@@ -834,15 +962,15 @@ function rowHTML(s){
       STATUS[s.status].short+'</span>'
     : '<span class="tag none" aria-hidden="true"></span>';
 
-  const umsCell = (v, cls) => {
+  const umsCell = (v, cls, g) => {
     if(v===null) return '<span class="ums none '+cls+'">·</span>';
-    const g = umsGrade(v);
-    return '<span class="ums '+cls+'" style="color:'+UMS_COLOR[g]+'" '+
-           'title="'+v+' of '+UMS_MAX+' UMS · grade '+g+'">'+v+'</span>';
+    g = g || (MODEL.metric? MODEL.metric.grade(v) : umsGrade(v));
+    return '<span class="ums '+cls+'" style="color:'+mColor(g)+'" '+
+           'title="'+v+' of '+mMax()+' · grade '+esc(String(g))+'">'+v+'</span>';
   };
 
-  /* Accent follows the AS grade once entered, and the mock grade until then. */
-  const accent = asG ? UMS_COLOR[asG]
+  /* Accent follows the headline grade once entered, and the mock grade until then. */
+  const accent = asG ? mColor(asG)
                : GRADE_ORDER.includes(s.pg) ? colorFor(s.pg)
                : 'var(--g-na)';
 
@@ -852,18 +980,19 @@ function rowHTML(s){
       '<span class="name">'+tag+'<span class="nm">'+esc(s.name)+'</span></span>'+
       avgHTML+
       '<span class="strip">'+strip+'</span>'+
-      umsCell(s.as,"as")+
+      umsCell(s.as,"as",asG)+
       '<span class="chipwrap">'+asChip+'</span>'+
     '</div>'+ (open? detailHTML(s) : "");
 }
 
-function umsBlock(label, v){
-  if(v===null) return '<div class="meta-block"><div class="k">'+label+'</div>'+
+function umsBlock(label, v, gOverride){
+  if(v===null||v===undefined) return '<div class="meta-block"><div class="k">'+label+'</div>'+
     '<div class="v"><span class="masked">not entered</span></div></div>';
-  const g = umsGrade(v), pct = Math.round(v/UMS_MAX*100);
+  const g = gOverride || (MODEL.metric? MODEL.metric.grade(v) : umsGrade(v));
+  const mx = mMax(), pct = Math.round(v/mx*100);
   return '<div class="meta-block"><div class="k">'+label+'</div><div class="v">'+
-    '<span style="color:'+UMS_COLOR[g]+';font-weight:500">'+v+'</span>'+
-    '<span class="masked"> / '+UMS_MAX+' · '+g+' · '+pct+'%</span></div></div>';
+    '<span style="color:'+mColor(g)+';font-weight:500">'+v+'</span>'+
+    '<span class="masked"> / '+mx+' · '+esc(String(g))+' · '+pct+'%</span></div></div>';
 }
 
 function detailHTML(s){
@@ -900,17 +1029,27 @@ function detailHTML(s){
       '</span></div>';
   };
 
-  const asG = umsGrade(s.as);
-  const accent = asG ? UMS_COLOR[asG]
+  const m = MODEL.metric;
+  const asG = scoreGrade(s);
+  const accent = asG ? mColor(asG)
                : GRADE_ORDER.includes(s.pg) ? colorFor(s.pg)
                : 'var(--g-na)';
+
+  let scoreBlocks = umsBlock(m? m.label : "Score", s.as, asG);
+  if(s.secVal!==null && s.secVal!==undefined && s.secLabel){
+    scoreBlocks += umsBlock(s.secLabel, s.secVal);
+  } else if(s.ol || s.al){
+    const flag = (lab,val)=> '<div class="meta-block"><div class="k">'+lab+'</div>'+
+      '<div class="v">'+(val? esc(val) : '<span class="masked">—</span>')+'</div></div>';
+    scoreBlocks += flag("O-Level", s.ol) + flag("A-Level A", s.al);
+  }
+
   return '<div class="detail" style="border-left-color:'+accent+'">'+
     '<div class="detail-grid">'+cells+'</div>'+
     '<div class="meta">'+
       '<div class="meta-block"><div class="k">Sat</div><div class="v">'+s.sat+' of '+s.marks.length+'</div></div>'+
       '<div class="meta-block"><div class="k">Trend</div><div class="v trend">'+trend+'</div></div>'+
-      umsBlock("AS UMS", s.as)+
-      umsBlock("A2 UMS", s.a2)+
+      scoreBlocks+
     '</div>'+
     '<div class="contacts">'+
       crow("Student", s.contact)+
@@ -920,6 +1059,27 @@ function detailHTML(s){
 }
 
 const esc = s => String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* ---------- tab switcher ---------- */
+function buildTabs(){
+  const nav=document.getElementById("tabs");
+  nav.innerHTML = TABS.map((t,i)=>
+    '<button class="tab" type="button" data-i="'+i+'" '+
+    'aria-pressed="'+(i===currentTab)+'">'+esc(t.full)+'</button>').join("");
+  nav.querySelectorAll(".tab").forEach(b=>{
+    b.addEventListener("click",()=>{
+      const i=Number(b.dataset.i);
+      if(i===currentTab) return;
+      currentTab=i;
+      openId=null;
+      document.getElementById("search").value="";
+      document.getElementById("filter").value="";
+      document.getElementById("list").innerHTML='<div class="state">Reading the sheet…</div>';
+      setTabHead();
+      load();
+    });
+  });
+}
 
 /* ---------- wiring ---------- */
 document.getElementById("search").addEventListener("input",render);
@@ -933,6 +1093,7 @@ document.getElementById("contactsBtn").addEventListener("click",e=>{
   render();
 });
 
+buildTabs();
 load();
 setInterval(load, REFRESH_MS);
 setInterval(()=>{
